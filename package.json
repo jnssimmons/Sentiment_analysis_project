@@ -1,0 +1,11 @@
+{
+  "name": "userinfo",
+  "version": "1.0.0",
+  "description": "userinfo",
+  "main": "app.js",
+  "dependencies": {
+    "twit": "^2.2.3",
+    "request": "^2.81.0"
+  },
+  "author": "Rachel Weil"
+}

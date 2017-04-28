@@ -2,10 +2,14 @@
 
 // Set up parameters for search & array for data storage
 const mincount = 2 // Minimum number of mentions within text to be considered relevant.
+const toptopic = 3; //Number of topics to send to azure table storage based on top scores
 var documents = [];
 var topics = [];
 
-const requestObj = require('request');
+//Set up Azure Storage credentials
+var azure = require('azure-storage')
+var tableSvc = azure.createTableService(process.env.azurestoragename, process.env.azurestoragekey)
+
 
 // Set up twitter and app credentials (See dev.twitter.com)
 const Twit = require('twit');
@@ -16,10 +20,12 @@ const T = new Twit({
     access_token_secret: process.env.twitteraccestokensecret
 });
 
-
 // Set up Cognitive Services credentials
-const topicskey = '';
-const sentimentkey = '';
+const cognitivekey = process.env.cognitivekey;
+
+
+//Set up additional nodemodules needed
+const requestObj = require('request');
 
 // Accept user input
 const readline = require('readline');
@@ -37,13 +43,19 @@ rl.question("Enter influencer's twitter user ID ", (id) => {
         // Get twitter data
         pullTweets(twitterhandle, tweetcount, '', topicAnalysis);
 
+
+        // Send tweets for topic analysis
+        // topicAnalysis();
+
+
         rl.close();
     });
 });
 
 
 
-//Use Twitt Node Module to pull tweets
+
+
 function pullTweets(twitterhandle, tweetcount, query = '', callback) {
     if (query.length > 0) {
         T.get('statuses/user_timeline', { screen_name: twitterhandle, count: tweetcount, q: query }, function (err, data, response) {
@@ -75,12 +87,11 @@ function pullTweets(twitterhandle, tweetcount, query = '', callback) {
     }
 };
 
-// Use Cog Servs Text API to run topic analysis on tweets
 function topicAnalysis() {
     const requestObj = require('request');
     requestObj({
         url: "https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/topics",
-        headers: { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": topicskey },
+        headers: { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": cognitivekey },
         method: "POST",
         body: JSON.stringify({ "documents": documents })
     }, function (err, res, body) {
@@ -95,11 +106,11 @@ function topicAnalysis() {
         function callTopicEndpoint() {
             requestObj({
                 url: topicendpoint,
-                headers: { "Ocp-Apim-Subscription-Key": topicskey },
+                headers: { "Ocp-Apim-Subscription-Key": cognitivekey },
                 method: "GET",
             }, function (err, res, body) {
                 let result = JSON.parse(body);
-                console.log(JSON.stringify(result));
+
                 if (result.status == "Succeeded") {
                     console.log(`SUCCESS // Topic analysis complete! Results:`);
                     documents = [];
@@ -117,7 +128,7 @@ function topicAnalysis() {
                         return b.score - a.score;
                     })
 
-                    for (let i = 0; i < 3; i++) {
+                    for (let i = 0; i < toptopic; i++) {
                         pullTweets(twitterhandle, tweetcount, topics[i].topic, sentAnalysis)
                     }
 
@@ -126,11 +137,11 @@ function topicAnalysis() {
                 }
                 else if (result.status == "Running") {
                     console.log(`WORKING // Crunching the numbers. This could take several minutes...`)
-                    console.log(result.status)
+                    
                 }
                 else {
                     console.log(`Something went wrong. :(`);
-                    console.log(result.status);
+                    
                 }
             });
         }
@@ -138,18 +149,16 @@ function topicAnalysis() {
 
 }
 
-// Use Cog Servs to run sentiment analysis on tweets gathered by topic; also finds the max, min and average sentiment value
 function sentAnalysis(topic) {
-    //retrieve sentiment scores
+
     requestObj.post({
         url: 'https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/sentiment',
         body: JSON.stringify({ "documents": documents }),
         headers: {
-            'Ocp-Apim-Subscription-Key': '7d68bdecfe974b959038435816d0ecb5',
+            'Ocp-Apim-Subscription-Key': 'cognitivekey',
             'Content-Type': 'application/json',
         }
     }, function (err, resp, body) {
-        // this function sorts the data and finds the min, max and average
         let result = JSON.parse(body);
         var total = 0, data = [];
 

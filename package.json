@@ -4,8 +4,9 @@
   "description": "userinfo",
   "main": "app.js",
   "dependencies": {
-    "twit": "^2.2.3",
-    "request": "^2.81.0"
+    "azure-storage": "^2.1.0",
+    "request": "^2.81.0",
+    "twit": "^2.2.3"
   },
   "author": "Rachel Weil"
 }

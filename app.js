@@ -1,7 +1,11 @@
 'use strict'
 
-// Set up parameters for search
+// Set up parameters for search & array for data storage
 const mincount = 2 // Minimum number of mentions within text to be considered relevant.
+var documents = [];
+var topics = [];
+
+const requestObj = require('request');
 
 // Set up twitter and app credentials (See dev.twitter.com)
 const Twit = require('twit');
@@ -12,17 +16,18 @@ const T = new Twit({
     access_token_secret: process.env.twitteraccestokensecret
 });
 
+
 // Set up Cognitive Services credentials
-const topicskey = 'bfa445e8654443219af90c643f47a714';
+const topicskey = '';
 const sentimentkey = '';
 
 // Accept user input
 const readline = require('readline');
 const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
+    input: process.stdin,
+    output: process.stdout
 });
-var twitterhandle, tweetcount;
+var twitterhandle , tweetcount ;
 rl.question("Enter influencer's twitter user ID ", (id) => {
     twitterhandle = id;
     rl.question("Enter number of tweets to analyze ", (number) => {
@@ -30,60 +35,138 @@ rl.question("Enter influencer's twitter user ID ", (id) => {
         console.log(`WORKING // Sending request to grab the last ${tweetcount} tweets from user ${twitterhandle}...`);
 
         // Get twitter data
-        var documents = [];
-        T.get('statuses/user_timeline', { screen_name: twitterhandle, count: tweetcount }, function(err, data, response) {
-            for (let i=0; i<tweetcount; i++) { 
-                documents.push({
-                    id: i+1,
-                    text: data[i].text
-                });
-            }  
-            console.log(`SUCCESS // Tweets collected. Please wait...`);
+        pullTweets(twitterhandle, tweetcount, '', topicAnalysis);
 
-            // Send tweets for topic analysis
-            const requestObj = require('request');
-            requestObj({
-                url: "https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/topics",
-                headers: { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": topicskey },
-                method: "POST",
-                body: JSON.stringify({"documents": documents})
-            }, function(err, res, body){
-                if (err) { console.log(`ERROR`) }
-                let topicendpoint = res.headers.location;
-                console.log(`WORKING // Sending tweets to Cognitive Services topic analysis API...`);
-                
-                // Check for results every 30 seconds.
-                let endpointCycle = setInterval(callTopicEndpoint, 30000);
-                
-                // Retrieve topics and scores
-                function callTopicEndpoint(){
-                    requestObj({
-                        url: topicendpoint,
-                        headers: { "Ocp-Apim-Subscription-Key": topicskey },
-                        method: "GET",
-                    }, function(err, res, body){
-                        let result = JSON.parse(body);
-                        if (result.status == "Succeeded"){
-                            console.log(`SUCCESS // Topic analysis complete! Results:`);
-                            for ( let i=0; i<result.operationProcessingResult.topics.length; i++){
-                                    if (result.operationProcessingResult.topics[i].score >= mincount) {
-                                        console.log(`${twitterhandle} mentioned "${result.operationProcessingResult.topics[i].keyPhrase}" ${result.operationProcessingResult.topics[i].score} times.`);
-                                    }
-                            }
-                            clearInterval(endpointCycle);
-                        }
-                        else if (result.status == "Running"){ 
-                            console.log(`WORKING // Crunching the numbers. This could take several minutes...`)
-                            console.log(result.status)
-                        }
-                        else { 
-                            console.log(`Something went wrong. :(`);
-                            console.log(result.status);
-                        }
-                    });
-                }
-            })
-        });
-    rl.close();
+        rl.close();
     });
 });
+
+
+
+//Use Twitt Node Module to pull tweets
+function pullTweets(twitterhandle, tweetcount, query = '', callback) {
+    if (query.length > 0) {
+        T.get('statuses/user_timeline', { screen_name: twitterhandle, count: tweetcount, q: query }, function (err, data, response) {
+            for (let i = 0; i < tweetcount; i++) {
+                documents.push({
+                    id: query + (i + 1),
+                    text: data[i].text,
+                    language: 'en'
+                });
+            }
+
+            console.log(`SUCCESS // Tweets collected. Please wait...`);
+            callback(query)
+        })
+    }
+    else {
+        T.get('statuses/user_timeline', { screen_name: twitterhandle, count: tweetcount }, function (err, data, response) {
+            for (let i = 0; i < tweetcount; i++) {
+                documents.push({
+                    id: query + (i + 1),
+                    text: data[i].text,
+                    language: 'en'
+                });
+            }
+
+            console.log(`SUCCESS // Tweets collected. Please wait...`);
+            callback()
+        })
+    }
+};
+
+// Use Cog Servs Text API to run topic analysis on tweets
+function topicAnalysis() {
+    const requestObj = require('request');
+    requestObj({
+        url: "https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/topics",
+        headers: { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": topicskey },
+        method: "POST",
+        body: JSON.stringify({ "documents": documents })
+    }, function (err, res, body) {
+        if (err) { console.log(`ERROR`) }
+        let topicendpoint = res.headers.location;
+        console.log(`WORKING // Sending tweets to Cognitive Services topic analysis API...`);
+
+        // Check for results every 30 seconds.
+        let endpointCycle = setInterval(callTopicEndpoint, 30000);
+
+        // Retrieve topics and scores
+        function callTopicEndpoint() {
+            requestObj({
+                url: topicendpoint,
+                headers: { "Ocp-Apim-Subscription-Key": topicskey },
+                method: "GET",
+            }, function (err, res, body) {
+                let result = JSON.parse(body);
+                console.log(JSON.stringify(result));
+                if (result.status == "Succeeded") {
+                    console.log(`SUCCESS // Topic analysis complete! Results:`);
+                    documents = [];
+                    for (let i = 0; i < result.operationProcessingResult.topics.length; i++) {
+                        if (result.operationProcessingResult.topics[i].score >= mincount) {
+                            console.log(`${twitterhandle} mentioned "${result.operationProcessingResult.topics[i].keyPhrase}" ${result.operationProcessingResult.topics[i].score} times.`);
+                            topics.push({
+                                topic: result.operationProcessingResult.topics[i].keyPhrase,
+                                score: parseInt(result.operationProcessingResult.topics[i].score)
+                            });
+                        }
+                    }
+
+                    topics.sort(function (a, b) {
+                        return b.score - a.score;
+                    })
+
+                    for (let i = 0; i < 3; i++) {
+                        pullTweets(twitterhandle, tweetcount, topics[i].topic, sentAnalysis)
+                    }
+
+                    clearInterval(endpointCycle);
+
+                }
+                else if (result.status == "Running") {
+                    console.log(`WORKING // Crunching the numbers. This could take several minutes...`)
+                    console.log(result.status)
+                }
+                else {
+                    console.log(`Something went wrong. :(`);
+                    console.log(result.status);
+                }
+            });
+        }
+    })
+
+}
+
+// Use Cog Servs to run sentiment analysis on tweets gathered by topic; also finds the max, min and average sentiment value
+function sentAnalysis(topic) {
+    //retrieve sentiment scores
+    requestObj.post({
+        url: 'https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/sentiment',
+        body: JSON.stringify({ "documents": documents }),
+        headers: {
+            'Ocp-Apim-Subscription-Key': '7d68bdecfe974b959038435816d0ecb5',
+            'Content-Type': 'application/json',
+        }
+    }, function (err, resp, body) {
+        // this function sorts the data and finds the min, max and average
+        let result = JSON.parse(body);
+        var total = 0, data = [];
+
+        for (let i = 0; i < result.documents.length; i++) {
+            total += result.documents[i].score;
+            data.push(parseFloat(result.documents[i].score));
+        }
+
+        data.sort(function (a, b) {
+            return a - b;
+        })
+
+        let min = data[0];
+        let max = data[data.length - 1];
+        let avg = total / data.length;
+
+        console.log(topic + " data ");
+        console.log('Min ' + min + ' Max ' + max + ' Avg ' + avg);
+    })
+}

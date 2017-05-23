@@ -17,7 +17,7 @@ const T = new Twit({
     consumer_key: process.env.twitterconsumerkey,
     consumer_secret: process.env.twitterconsumersecret,
     access_token: process.env.twitteraccesstoken,
-    access_token_secret: process.env.twitteraccestokensecret
+    access_token_secret: process.env.twitteraccesstokensecret
 });
 
 // Set up Cognitive Services credentials
@@ -33,7 +33,7 @@ const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
-var twitterhandle , tweetcount ;
+
 rl.question("Enter influencer's twitter user ID ", (id) => {
     twitterhandle = id;
     rl.question("Enter number of tweets to analyze ", (number) => {
@@ -52,27 +52,30 @@ rl.question("Enter influencer's twitter user ID ", (id) => {
     });
 });
 
+/*
+Test statements for skipping console input
 
-
-
+var twitterhandle = "ItsFlo", tweetcount = '100';
+pullTweets(twitterhandle, tweetcount, '', topicAnalysis);*/
 
 function pullTweets(twitterhandle, tweetcount, query = '', callback) {
+    let tweets = [];
     if (query.length > 0) {
-        T.get('statuses/user_timeline', { screen_name: twitterhandle, count: tweetcount, q: query }, function (err, data, response) {
-            for (let i = 0; i < tweetcount; i++) {
-                documents.push({
+        for (var i = 0; i < documents.length; i++) {
+            if (documents[i].text.includes(query)) {
+                tweets.push({
                     id: query + (i + 1),
-                    text: data[i].text,
+                    text: documents[i].text,
                     language: 'en'
                 });
             }
+        }
 
-            console.log(`SUCCESS // Tweets collected. Please wait...`);
-            callback(query)
-        })
+        callback(query, tweets)
     }
     else {
         T.get('statuses/user_timeline', { screen_name: twitterhandle, count: tweetcount }, function (err, data, response) {
+            console.log(data);
             for (let i = 0; i < tweetcount; i++) {
                 documents.push({
                     id: query + (i + 1),
@@ -87,11 +90,13 @@ function pullTweets(twitterhandle, tweetcount, query = '', callback) {
     }
 };
 
+// Topic analysis done on tweets collecred
+
 function topicAnalysis() {
-    const requestObj = require('request');
+
     requestObj({
         url: "https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/topics",
-        headers: { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": cognitivekey },
+        headers: { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": '1c97a02440654225865d6df21cf74c00' },
         method: "POST",
         body: JSON.stringify({ "documents": documents })
     }, function (err, res, body) {
@@ -106,14 +111,13 @@ function topicAnalysis() {
         function callTopicEndpoint() {
             requestObj({
                 url: topicendpoint,
-                headers: { "Ocp-Apim-Subscription-Key": cognitivekey },
+                headers: { "Ocp-Apim-Subscription-Key": 'e54230d40dde4148981f12e208ad77d4' },
                 method: "GET",
             }, function (err, res, body) {
                 let result = JSON.parse(body);
 
                 if (result.status == "Succeeded") {
                     console.log(`SUCCESS // Topic analysis complete! Results:`);
-                    documents = [];
                     for (let i = 0; i < result.operationProcessingResult.topics.length; i++) {
                         if (result.operationProcessingResult.topics[i].score >= mincount) {
                             console.log(`${twitterhandle} mentioned "${result.operationProcessingResult.topics[i].keyPhrase}" ${result.operationProcessingResult.topics[i].score} times.`);
@@ -128,6 +132,7 @@ function topicAnalysis() {
                         return b.score - a.score;
                     })
 
+                    // for top 3 topics, run sentiment analysis ; if you want more than top 3 change value of toptopic value
                     for (let i = 0; i < toptopic; i++) {
                         pullTweets(twitterhandle, tweetcount, topics[i].topic, sentAnalysis)
                     }
@@ -137,11 +142,12 @@ function topicAnalysis() {
                 }
                 else if (result.status == "Running") {
                     console.log(`WORKING // Crunching the numbers. This could take several minutes...`)
-                    
+
                 }
                 else {
+                    console.log(body)
                     console.log(`Something went wrong. :(`);
-                    
+
                 }
             });
         }
@@ -149,13 +155,15 @@ function topicAnalysis() {
 
 }
 
-function sentAnalysis(topic) {
+// Sentiment Analysis done on tweets only relating to topics
+
+function sentAnalysis(topic, tweets) {
 
     requestObj.post({
         url: 'https://westus.api.cognitive.microsoft.com/text/analytics/v2.0/sentiment',
-        body: JSON.stringify({ "documents": documents }),
+        body: JSON.stringify({ "documents": tweets }),
         headers: {
-            'Ocp-Apim-Subscription-Key': 'cognitivekey',
+            'Ocp-Apim-Subscription-Key': 'e54230d40dde4148981f12e208ad77d4',
             'Content-Type': 'application/json',
         }
     }, function (err, resp, body) {
@@ -163,8 +171,10 @@ function sentAnalysis(topic) {
         var total = 0, data = [];
 
         for (let i = 0; i < result.documents.length; i++) {
-            total += result.documents[i].score;
-            data.push(parseFloat(result.documents[i].score));
+            if (result.documents[i].id.includes(topic)) {
+                total += result.documents[i].score;
+                data.push(parseFloat(result.documents[i].score));
+            }
         }
 
         data.sort(function (a, b) {
@@ -174,6 +184,28 @@ function sentAnalysis(topic) {
         let min = data[0];
         let max = data[data.length - 1];
         let avg = total / data.length;
+
+        var entGen = azure.TableUtilities.entityGenerator
+        var task = {
+            PartitionKey: entGen.String(twitterhandle),
+            RowKey: entGen.String(new Date(Date.now()).toString()), // must be unique
+            TwitterId: entGen.String('  '),
+            MinSentiment: entGen.Double(min),
+            MaxSentiment: entGen.Double(max),
+            AvgSentiment: entGen.Double(avg),
+            SubTopic: entGen.String(topic)
+        }
+
+        //Table name now says NBA but can be changed to any domain name of choosing -- find a way to automate this
+        tableSvc.insertEntity('NBA', task, function (error, result, response) {
+            if (!error) {
+                console.log('Analysis Data added to Table')
+            } else {
+                console.log(error)
+            }
+        })
+
+        
 
         console.log(topic + " data ");
         console.log('Min ' + min + ' Max ' + max + ' Avg ' + avg);

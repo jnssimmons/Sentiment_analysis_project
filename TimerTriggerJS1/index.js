@@ -183,6 +183,7 @@ function sentAnalysis(topic, tweets) {
             if (!error) {
                 context.log('Analysis Data added to Table')
             } else {
+                context.log("Error for " + topic);
                 context.log(error)
             }
         })

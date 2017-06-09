@@ -37,7 +37,7 @@ const textkey = process.env.textkey;
 const requestObj = require('request');
 
 // Test statements for skipping input
-var twitterhandle = "NoWaySheCodes", tweetcount = '100';
+var twitterhandle = "Azure", tweetcount = '100';
 pullTweets(twitterhandle, tweetcount, '', topicAnalysis);
 
 function pullTweets(twitterhandle, tweetcount, query = '', callback) {
@@ -170,7 +170,7 @@ function sentAnalysis(topic, tweets) {
         var entGen = azure.TableUtilities.entityGenerator
         var task = {
             PartitionKey: entGen.String(twitterhandle),
-            RowKey: entGen.String(new Date(Date.now()).toString()), // must be unique
+            RowKey: entGen.String(new Date(Date.now()).toString() + '-'+ topic), // must be unique
             TwitterId: entGen.String('  '),
             MinSentiment: entGen.Double(min),
             MaxSentiment: entGen.Double(max),

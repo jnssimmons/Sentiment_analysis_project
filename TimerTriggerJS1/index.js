@@ -37,7 +37,7 @@ const textkey = process.env.textkey;
 const requestObj = require('request');
 
 // Test statements for skipping input
-var twitterhandle = "Azure", tweetcount = '100';
+var twitterhandle = "ItsFlo", tweetcount = '100';
 pullTweets(twitterhandle, tweetcount, '', topicAnalysis);
 
 function pullTweets(twitterhandle, tweetcount, query = '', callback) {
